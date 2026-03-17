@@ -36,13 +36,17 @@ export default function Home() {
   const [categories, setCategories] = useState<string[]>([]);
   const [subCategories, setSubCategories] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(
-    undefined
+    undefined,
   );
   const [selectedSubCategory, setSelectedSubCategory] = useState<
     string | undefined
   >(undefined);
   const [loading, setLoading] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const LIMIT = 20;
 
   useEffect(() => {
     fetch("/api/categories")
@@ -52,7 +56,7 @@ export default function Home() {
 
   useEffect(() => {
     if (selectedCategory) {
-      fetch(`/api/subcategories`)
+      fetch(`/api/subcategories?category=${selectedCategory}`)
         .then((res) => res.json())
         .then((data) => setSubCategories(data.subCategories));
     } else {
@@ -62,19 +66,34 @@ export default function Home() {
   }, [selectedCategory]);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (search) params.append("search", search);
+    if (debouncedSearch) params.append("search", debouncedSearch);
     if (selectedCategory) params.append("category", selectedCategory);
     if (selectedSubCategory) params.append("subCategory", selectedSubCategory);
-    params.append("limit", "20");
+    params.append("limit", String(LIMIT));
+    params.append("offset", String(offset));
 
     fetch(`/api/products?${params}`)
       .then((res) => res.json())
       .then((data) => {
         setProducts(data.products);
+        setTotal(data.total);
         setLoading(false);
       });
+  }, [debouncedSearch, selectedCategory, selectedSubCategory, offset]);
+
+  // When any filter changes, reset to page 1
+  useEffect(() => {
+    setOffset(0);
   }, [search, selectedCategory, selectedSubCategory]);
 
   return (
@@ -95,13 +114,16 @@ export default function Home() {
             </div>
 
             <Select
-              value={selectedCategory}
-              onValueChange={(value) => setSelectedCategory(value || undefined)}
+              value={selectedCategory ?? "all"}
+              onValueChange={(value) =>
+                setSelectedCategory(value === "all" ? undefined : value)
+              }
             >
-              <SelectTrigger className="w-full md:w-[200px]">
+              <SelectTrigger className="w-full md:w-50">
                 <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
                 {categories.map((cat) => (
                   <SelectItem key={cat} value={cat}>
                     {cat}
@@ -117,7 +139,7 @@ export default function Home() {
                   setSelectedSubCategory(value || undefined)
                 }
               >
-                <SelectTrigger className="w-full md:w-[200px]">
+                <SelectTrigger className="w-full md:w-50">
                   <SelectValue placeholder="All Subcategories" />
                 </SelectTrigger>
                 <SelectContent>
@@ -157,17 +179,40 @@ export default function Home() {
           </div>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground mb-4">
-              Showing {products.length} products
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-muted-foreground">
+                Showing {offset + 1}–{Math.min(offset + LIMIT, total)} of{" "}
+                {total} products
+              </p>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={offset === 0}
+                  onClick={() => setOffset(offset - LIMIT)}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground py-2">
+                  Page {Math.floor(offset / LIMIT) + 1} of{" "}
+                  {Math.ceil(total / LIMIT)}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={offset + LIMIT >= total}
+                  onClick={() => setOffset(offset + LIMIT)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {products.map((product) => (
                 <Link
                   key={product.stacklineSku}
-                  href={{
-                    pathname: "/product",
-                    query: { product: JSON.stringify(product) },
-                  }}
+                  href={`/product/${product.stacklineSku}`}
                 >
                   <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
                     <CardHeader className="p-0">
